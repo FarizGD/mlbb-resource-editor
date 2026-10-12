@@ -538,10 +538,11 @@ public class MLBBLauncherActivity extends Activity {
             Runnable convert=()->worker.execute(()->{
                 try{
                     if(!MLBBNativeVorbis.available())throw new IOException("VorbisLib native hanya mendukung ARM64 dan tidak ditemukan di APK ini");
-                    message("Mendekode audio impor ke WAV dengan kodek Android...");
-                    byte[] wav=MLBBAudioConverter.decodeToWav(this,uri);
+                    boolean compact=MLBBAudioConverter.needsCompression(this,uri);
+                    message(compact?"Audio >2 MB: kompres otomatis ke mono 24 kHz...":"Mendekode audio impor ke WAV...");
+                    byte[] wav=MLBBAudioConverter.decodeToWav(this,uri,compact);
                     message("Mengenkode WAV ke Wwise Custom Vorbis...");
-                    byte[] wem=MLBBNativeVorbis.encode(wav,0.4f,Integer.MAX_VALUE);
+                    byte[] wem=MLBBNativeVorbis.encode(wav,compact?0.2f:0.4f,Integer.MAX_VALUE);
                     if(bank!=targetBank)throw new IOException("Bank suara telah berubah selama konversi; ulangi impor");
                     if(MLBBBankReader.wemCodec(wem)!=targetBank.originalCodec(targetEntry))
                         throw new IOException("Kodek WEM hasil enkode tidak cocok dengan kodek bank suara asli");
