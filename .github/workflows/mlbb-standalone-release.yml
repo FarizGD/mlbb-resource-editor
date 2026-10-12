@@ -57,7 +57,7 @@ jobs:
           printf '%s' "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
           APK=$(find standalone/build/outputs/apk/release -name '*.apk' | head -1)
           APKSIGNER=$(find "${ANDROID_HOME}/build-tools" -name apksigner -type f | sort -V | tail -1)
-          "$APKSIGNER" sign --ks "$RUNNER_TEMP/release.jks" --ks-key-alias "$KEY_ALIAS" --ks-pass env:KEYSTORE_PASS --key-pass env:KEY_PASS --out MLBB-Resource-Editor-v0.1.0-arm64-v8a.apk "$APK"
+          "$APKSIGNER" sign --ks "$RUNNER_TEMP/release.jks" --ks-key-alias "$KEY_ALIAS" --ks-pass env:KEYSTORE_PASS --key-pass env:KEY_PASS --out MLBB-Resource-Editor-v0.2.0-beta-arm64-v8a.apk "$APK"
           "$APKSIGNER" verify --verbose MLBB-Resource-Editor-v0.2.0-beta-arm64-v8a.apk
           gh release create v0.2.0-beta MLBB-Resource-Editor-v0.2.0-beta-arm64-v8a.apk --title "MLBB Resource Editor v0.2.0 Beta" --notes "Second standalone Android ARM64 release. No Termux bootstrap or terminal modules. Includes Shizuku BNK editing, VorbisLib WEM conversion and per-audio preview. Early release; keep backups and test on device." --prerelease --target "$GITHUB_SHA"
           rm -f "$RUNNER_TEMP/release.jks"
