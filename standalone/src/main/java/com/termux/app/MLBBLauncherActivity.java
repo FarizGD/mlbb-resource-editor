@@ -401,8 +401,10 @@ public class MLBBLauncherActivity extends Activity {
                 .setMessage(incompatible.getMessage()+"\n\nBank suara asli tidak berubah. Gunakan enkoder Wwise dengan kodek yang sesuai sebelum memasang.")
                 .setPositiveButton("OK",null).show();return;
         }
-        new AlertDialog.Builder(this).setTitle("Pasang hasil edit "+name+"?")
-            .setMessage("Tutup Mobile Legends sebelum melanjutkan. Cadangan asli .bak tetap disimpan dan tidak ditimpa. Kodek Wwise yang tidak cocok mungkin gagal diputar di game.")
+        String hircWarning=bank.hircWarning(new java.util.HashMap<>(replacements));
+        new AlertDialog.Builder(this).setTitle(hircWarning==null?"Pasang hasil edit "+name+"?":"Peringatan HIRC — tetap pasang?")
+            .setMessage((hircWarning==null?"":hircWarning+"\\n\\n")
+                +"Tutup Mobile Legends sebelum melanjutkan. Cadangan asli .bak tetap disimpan dan tidak ditimpa. Pastikan backup tersedia.")
             .setNegativeButton("Batal",null)
             .setPositiveButton("Pasang", (dialog,which)->worker.execute(()->{
                 try{
