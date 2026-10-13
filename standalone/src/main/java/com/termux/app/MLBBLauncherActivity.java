@@ -539,13 +539,15 @@ public class MLBBLauncherActivity extends Activity {
                 try{
                     if(!MLBBNativeVorbis.available())throw new IOException("VorbisLib native hanya mendukung ARM64 dan tidak ditemukan di APK ini");
                     boolean compact=MLBBAudioConverter.needsCompression(this,uri);
-                    message(compact?"Audio >2 MB: kompres otomatis ke mono 24 kHz...":"Mendekode audio impor ke WAV...");
-                    byte[] wav=MLBBAudioConverter.decodeToWav(this,uri,compact);
-                    message("Mengenkode WAV ke Wwise Custom Vorbis...");
+                    message("Mengonversi audio ke mono 16 kHz sebelum encoding...");
+                    byte[] wav=MLBBAudioConverter.decodeToWav(this,uri,true);
+                    message("Mengenkode Wwise Custom Vorbis dan memvalidasi hasil...");
                     byte[] wem=MLBBNativeVorbis.encode(wav,compact?0.2f:0.4f,Integer.MAX_VALUE);
+                    MLBBBankReader.validateCustomWem(wem);
                     if(bank!=targetBank)throw new IOException("Bank suara telah berubah selama konversi; ulangi impor");
                     if(MLBBBankReader.wemCodec(wem)!=targetBank.originalCodec(targetEntry))
                         throw new IOException("Kodek WEM hasil enkode tidak cocok dengan kodek bank suara asli");
+                    targetBank.validateReplacementCodecs(java.util.Collections.singletonMap(id,wem));
                     replacements.put(id,wem);
                     runOnUiThread(()->{
                         audio();
@@ -569,6 +571,7 @@ public class MLBBLauncherActivity extends Activity {
                     byte[] wem=readLimited(in,Integer.MAX_VALUE);
                     if(wem.length<12 || !(new String(wem,0,4,java.nio.charset.StandardCharsets.US_ASCII).equals("RIFF")))
                         throw new IOException("Bukan berkas RIFF/WEM");
+                    targetBank.validateReplacementCodecs(java.util.Collections.singletonMap(id,wem));
                     replacements.put(id,wem);
                     runOnUiThread(()->{audio();message("Audio pengganti disiapkan untuk ID "+id);});
                 }catch(Exception ex){message("Impor WEM gagal: "+ex.getMessage());}
