@@ -112,10 +112,6 @@ public final class MLBBAudioConverter {
                                     audio.write(sample&255);audio.write((sample>>8)&255);
                                 }
                             }
-                        }else{
-                            if((long)audio.size()+info.size>pcmLimit)
-                                throw new IOException("Audio terlalu besar. Gunakan berkas terkompresi atau potong durasinya.");
-                            byte[] block=new byte[info.size];output.get(block);audio.write(block);
                         }
                     }
                     codec.releaseOutputBuffer(index,false);
