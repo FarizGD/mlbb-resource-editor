@@ -34,9 +34,9 @@ public final class MLBBAudioConverter {
             return fd.getStatSize()>2L*1024*1024;
         }
     }
-    /** Large audio is reduced as it is decoded, instead of storing full PCM. */
+    /** Semua audio custom dikonversi ke PCM16 mono 16000 Hz sebelum VorbisLib. */
     public static byte[] decodeToWav(Context context,Uri source)throws Exception{
-        return decodeToWav(context,source,needsCompression(context,source));
+        return decodeToWav(context,source,true);
     }
     public static byte[] decodeToWav(Context context,Uri source,boolean compact)throws Exception{
         MediaExtractor extractor=new MediaExtractor();
@@ -61,7 +61,7 @@ public final class MLBBAudioConverter {
             int rate=initial.containsKey(MediaFormat.KEY_SAMPLE_RATE)?initial.getInteger(MediaFormat.KEY_SAMPLE_RATE):48000;
             ByteArrayOutputStream audio=new ByteArrayOutputStream();
             long phase=0;
-            final int pcmLimit=compact?32*1024*1024:64*1024*1024;
+            final int pcmLimit=32*1024*1024;
             MediaCodec.BufferInfo info=new MediaCodec.BufferInfo();
             while(!outputEnded){
                 if(!inputEnded){
@@ -95,8 +95,8 @@ public final class MLBBAudioConverter {
                             throw new IOException("VorbisLib hanya mendukung mono/stereo 8-48 kHz");
                         int frameBytes=channels*2;
                         if(info.size%frameBytes!=0)throw new IOException("Frame PCM tidak sejajar");
-                        if(compact){
-                            int outRate=Math.min(24000,rate);
+                        {
+                            int outRate=16000;
                             for(int frame=0;frame<info.size/frameBytes;frame++){
                                 int lo=output.get()&255,hi=output.get();
                                 int sample=(short)(lo|(hi<<8));
@@ -105,7 +105,7 @@ public final class MLBBAudioConverter {
                                     sample=(sample+(short)(lo2|(hi2<<8)))/2;
                                 }
                                 phase+=outRate;
-                                if(phase>=rate){
+                                while(phase>=rate){
                                     phase-=rate;
                                     if(audio.size()+2>pcmLimit)
                                         throw new IOException("Audio terlalu panjang. Potong durasi agar tidak kehabisan memori.");
@@ -124,8 +124,8 @@ public final class MLBBAudioConverter {
             }
             if(channels<1||channels>2||rate<8000||rate>48000)throw new IOException("VorbisLib requires mono/stereo audio at 8–48 kHz; convert sample rate/channels before importing.");
             byte[] pcm=audio.toByteArray();
-            int outChannels=compact?1:channels;
-            int outRate=compact?Math.min(24000,rate):rate;
+            int outChannels=1;
+            int outRate=16000;
             if(pcm.length%(outChannels*2)!=0)throw new IOException("Misaligned PCM samples");
             return makeWem(pcm,outChannels,outRate);
         }finally{
