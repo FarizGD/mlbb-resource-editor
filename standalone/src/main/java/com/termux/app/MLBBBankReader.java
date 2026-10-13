@@ -155,6 +155,32 @@ public final class MLBBBankReader {
         return result;
     }
 
+    private byte[] safePatchHirc(byte[] original,Map<Long,byte[]> changes){
+        try{return patchHirc(original,changes);}
+        catch(IOException warning){return original;}
+    }
+
+    /** Non-blocking warning for an unsupported HIRC layout; payload stays unchanged. */
+    public String hircWarning(Map<Long,byte[]> changes){
+        if(!hasHirc || changes.isEmpty())return null;
+        int pos=0;
+        while(pos+8<=source.length){
+            int size=integer(source,pos+4);
+            if(size<0||(long)pos+8+size>source.length)
+                return "Struktur chunk HIRC/BNK tidak valid; lanjut dengan risiko audio tidak diputar.";
+            if(ascii(source,pos).equals("HIRC")){
+                try{
+                    patchHirc(Arrays.copyOfRange(source,pos+8,pos+8+size),changes);
+                }catch(IOException warning){
+                    return "Peringatan HIRC: "+warning.getMessage()
+                        +"\\nReferensi HIRC asli akan dipertahankan. Audio mungkin corrupt atau tidak terdengar.";
+                }
+            }
+            pos+=8+size;
+        }
+        return null;
+    }
+
     /**
      * Creates a separate BNK. Preserves unknown chunks and their order as-is.
      * Does not guarantee that a game accepts a changed WEM codec or event length.
@@ -183,7 +209,7 @@ public final class MLBBBankReader {
             String tag=ascii(source,pos);
             byte[] chunk=tag.equals("DIDX")?index.toByteArray():
                          tag.equals("DATA")?media.toByteArray():
-                         tag.equals("HIRC")?patchHirc(Arrays.copyOfRange(source,pos+8,pos+8+size),replacements):
+                         tag.equals("HIRC")?safePatchHirc(Arrays.copyOfRange(source,pos+8,pos+8+size),replacements):
                          Arrays.copyOfRange(source,pos+8,pos+8+size);
             out.write(tag.getBytes(StandardCharsets.US_ASCII));
             little32(out,chunk.length);out.write(chunk);
