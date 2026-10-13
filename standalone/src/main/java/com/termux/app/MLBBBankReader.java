@@ -105,13 +105,55 @@ public final class MLBBBankReader {
             if(originalCodec(e)!=0xffff)throw new IOException("Kodek audio asli "+e.id+" bukan Custom Vorbis");
             validateCustomWem(changes.get(e.id));
         }
-        // HIRC layouts vary with Wwise bank generation and event types.
-        // Until explicit references can be parsed and rewritten, fail closed on size changes.
-        if(hasHirc)for(Entry e:entries)if(changes.containsKey(e.id)
-            &&changes.get(e.id).length!=e.size)
-            throw new IOException("Repack diblokir: BNK memiliki metadata HIRC yang belum dapat diperbarui dengan aman untuk ukuran WEM berbeda.");
+        // HIRC Sound objects are checked and updated when repacking.
+        // Unknown HIRC media-reference layouts are rejected by patchHirc().
     }
 
+
+    /**
+     * Update embedded-media size inside Wwise HIRC Sound objects (type 2).
+     * Verified against vo_105212.2021.bnk: 42 Sound objects reference 33 DIDX
+     * media IDs; source ID at body +9, media size at body +13.
+     * Refuse unfamiliar type-2 layouts instead of silently corrupting the bank.
+     */
+    private byte[] patchHirc(byte[] chunk,Map<Long,byte[]> changes)throws IOException{
+        byte[] result=chunk.clone();
+        if(result.length<4)throw new IOException("HIRC terlalu pendek");
+        long count=integer(result,0)&0xffffffffL;
+        int pos=4;
+        Map<Long,Integer> originalSizes=new HashMap<>();
+        for(Entry e:entries)originalSizes.put(e.id,e.size);
+        Set<Long> updatedIds=new HashSet<>();
+        for(long i=0;i<count;i++){
+            if(pos+5>result.length)throw new IOException("Objek HIRC terpotong");
+            int type=result[pos]&255;
+            int size=integer(result,pos+1);
+            if(size<0||(long)pos+5+size>result.length)
+                throw new IOException("Ukuran objek HIRC rusak");
+            int body=pos+5;
+            if(type==2){
+                if(size<21)throw new IOException("Objek Sound HIRC tidak dikenali");
+                long mediaId=integer(result,body+9)&0xffffffffL;
+                Integer originalSize=originalSizes.get(mediaId);
+                if(originalSize!=null && changes.containsKey(mediaId)){
+                    int oldSize=integer(result,body+13);
+                    int pluginId=integer(result,body+4);
+                    int streamType=result[body+8]&255;
+                    if(pluginId!=0x00040001 || streamType!=0 || oldSize!=originalSize)
+                        throw new IOException("Layout HIRC tidak sesuai untuk media ID "+mediaId);
+                    int newSize=changes.get(mediaId).length;
+                    for(int k=0;k<4;k++)result[body+13+k]=(byte)(newSize>>>(k*8));
+                    updatedIds.add(mediaId);
+                }
+            }
+            pos=body+size;
+        }
+        if(pos!=result.length)throw new IOException("Panjang HIRC tidak sesuai");
+        for(Entry e:entries)if(changes.containsKey(e.id) && changes.get(e.id).length!=e.size
+            && !updatedIds.contains(e.id))
+            throw new IOException("Referensi ukuran HIRC tidak ditemukan untuk ID "+e.id);
+        return result;
+    }
 
     /**
      * Creates a separate BNK. Preserves unknown chunks and their order as-is.
@@ -141,6 +183,7 @@ public final class MLBBBankReader {
             String tag=ascii(source,pos);
             byte[] chunk=tag.equals("DIDX")?index.toByteArray():
                          tag.equals("DATA")?media.toByteArray():
+                         tag.equals("HIRC")?patchHirc(Arrays.copyOfRange(source,pos+8,pos+8+size),replacements):
                          Arrays.copyOfRange(source,pos+8,pos+8+size);
             out.write(tag.getBytes(StandardCharsets.US_ASCII));
             little32(out,chunk.length);out.write(chunk);
