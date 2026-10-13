@@ -15,6 +15,8 @@ public final class MLBBBankReader {
     public final List<Entry> entries=new ArrayList<>();
     private final byte[] source;
     private final int dataStart;
+    private final boolean hasHirc;
+    public static final String FORMAT_MESSAGE="Untuk mencegah corrupt audio, semua audio custom wajib mono 16 kHz sebelum repack.";
 
     public MLBBBankReader(byte[] bytes) throws IOException {
         source=bytes;
@@ -30,6 +32,15 @@ public final class MLBBBankReader {
         }
         if(didx<0||data<0||indexSize%12!=0)throw new IOException("Missing/invalid DIDX or DATA");
         dataStart=data;
+        boolean hircFound=false;
+        int scan=0;
+        while(scan+8<=bytes.length){
+            int length=integer(bytes,scan+4);
+            if(length<0||(long)scan+8+length>bytes.length)throw new IOException("Panjang chunk BNK tidak valid");
+            if(ascii(bytes,scan).equals("HIRC"))hircFound=true;
+            scan+=8+length;
+        }
+        hasHirc=hircFound;
         for(int i=didx;i<didx+indexSize;i+=12){
             long id=integer(bytes,i)&0xffffffffL;
             int off=integer(bytes,i+4),size=integer(bytes,i+8);
@@ -66,13 +77,39 @@ public final class MLBBBankReader {
         return String.format(java.util.Locale.ROOT,"Codec 0x%04X",codec);
     }
     public int originalCodec(Entry e)throws IOException{return wemCodec(extract(e));}
+    /** Wwise Custom Vorbis WEM must be mono 16 kHz with a decodable payload. */
+    public static void validateCustomWem(byte[] wem)throws IOException{
+        if(wemCodec(wem)!=0xffff)throw new IOException(FORMAT_MESSAGE+" Kodek harus Wwise Custom Vorbis.");
+        int pos=12;
+        while(pos+8<=wem.length){
+            int len=integer(wem,pos+4);
+            if(len<0||(long)pos+8+len>wem.length)throw new IOException("Chunk WEM rusak");
+            if(ascii(wem,pos).equals("fmt ")){
+                if(len<16)throw new IOException("Metadata fmt WEM terlalu pendek");
+                int channels=(wem[pos+10]&255)|((wem[pos+11]&255)<<8);
+                long rate=integer(wem,pos+12)&0xffffffffL;
+                if(channels!=1||rate!=16000)throw new IOException(FORMAT_MESSAGE+
+                    " Ditemukan "+channels+" channel, "+rate+" Hz.");
+                if(!MLBBNativeVorbis.available())throw new IOException("VorbisLib diperlukan untuk verifikasi decode WEM.");
+                byte[] ogg=MLBBNativeVorbis.decodeToOgg(wem,false);
+                if(ogg==null||ogg.length<4||ogg[0]!='O'||ogg[1]!='g'||ogg[2]!='g'||ogg[3]!='S')
+                    throw new IOException("Validasi decode VorbisLib gagal: OGG tidak valid.");
+                return;
+            }
+            pos+=8+len+(len&1);
+        }
+        throw new IOException("Metadata fmt WEM tidak ada");
+    }
     public void validateReplacementCodecs(Map<Long,byte[]> changes)throws IOException {
         for(Entry e:entries)if(changes.containsKey(e.id)){
-            int original=originalCodec(e),incoming=wemCodec(changes.get(e.id));
-            if(original!=incoming)
-                throw new IOException("Audio "+e.id+" uses "+codecName(original)+
-                    ", but replacement is "+codecName(incoming)+". Game playback is not reliable. Export only; encode compatible Wwise media first.");
+            if(originalCodec(e)!=0xffff)throw new IOException("Kodek audio asli "+e.id+" bukan Custom Vorbis");
+            validateCustomWem(changes.get(e.id));
         }
+        // HIRC layouts vary with Wwise bank generation and event types.
+        // Until explicit references can be parsed and rewritten, fail closed on size changes.
+        if(hasHirc)for(Entry e:entries)if(changes.containsKey(e.id)
+            &&changes.get(e.id).length!=e.size)
+            throw new IOException("Repack diblokir: BNK memiliki metadata HIRC yang belum dapat diperbarui dengan aman untuk ukuran WEM berbeda.");
     }
 
 
@@ -82,6 +119,7 @@ public final class MLBBBankReader {
      */
     public byte[] repack(Map<Long,byte[]> replacements) throws IOException {
         if(replacements.isEmpty())return source.clone();
+        validateReplacementCodecs(replacements);
         Set<Long> known=new HashSet<>();
         for(Entry e:entries)known.add(e.id);
         if(!known.containsAll(replacements.keySet()))throw new IOException("Replacement has unknown audio ID");
