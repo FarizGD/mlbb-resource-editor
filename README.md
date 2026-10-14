@@ -1,8 +1,8 @@
 # Mobile Legends: Bang Bang! Assets Editor
-v0.2.0-beta
+v0.3.0-beta-AudioOnly
 by FarizGD
 
-Implemented:
+Implemented (AudioOnly beta):
 
 [x] Audio Editor
 
