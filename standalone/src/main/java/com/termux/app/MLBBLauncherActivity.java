@@ -16,7 +16,7 @@ import android.content.pm.PackageManager;
 
 /** Local BNK explorer. The protected-game Shizuku broker is a separate milestone. */
 public class MLBBLauncherActivity extends Activity {
-    private static final int OPEN_BNK=100, SAVE_WEM=101, IMPORT_WEM=102, SAVE_BNK=103, IMPORT_AUDIO=104, IMPORT_OGG_TS=105, SAVE_TS_WEM=106, IMPORT_NATIVE_AUDIO=107, SAVE_NATIVE_WEM=108, SAVE_NATIVE_OGG=109;
+    private static final int OPEN_BNK=100, SAVE_WEM=101, IMPORT_WEM=102, SAVE_BNK=103, IMPORT_AUDIO=104, IMPORT_OGG_TS=105, SAVE_TS_WEM=106, IMPORT_NATIVE_AUDIO=107, SAVE_NATIVE_WEM=108, SAVE_NATIVE_OGG=109, SAVE_ORIGINAL_OGG=110;
     private final java.util.concurrent.ExecutorService worker=Executors.newSingleThreadExecutor();
     private LinearLayout root;
     private TextView status;
@@ -39,6 +39,7 @@ public class MLBBLauncherActivity extends Activity {
     private String previewBankName=null;
     private byte[] nativeConvertedWem=null;
     private byte[] nativeDecodedOgg=null;
+    private byte[] originalExportOgg=null;
     private byte[] experimentalWem=null;
     private long experimentalId=0;
     private int dp(float n){return (int)(n*getResources().getDisplayMetrics().density+0.5f);}
@@ -116,6 +117,29 @@ public class MLBBLauncherActivity extends Activity {
                     }catch(Exception ex){stopPreview();message("Gagal memutar audio: "+ex.getMessage());}
                 });
             }catch(Exception ex){message("Gagal mengurai audio untuk pratinjau: "+ex.getMessage());}
+        });
+    }
+    private void exportOriginalOgg(MLBBBankReader.Entry entry){
+        final MLBBBankReader sourceBank=bank;
+        if(sourceBank==null){message("Pilih bank suara terlebih dahulu");return;}
+        if(!MLBBNativeVorbis.available()){message("Decoder VorbisLib ARM64 tidak tersedia");return;}
+        message("Mengonversi suara asli "+entry.id+" ke OGG...");
+        worker.execute(()->{
+            try{
+                byte[] originalWem=sourceBank.extract(entry);
+                byte[] ogg=MLBBNativeVorbis.decodeToOgg(originalWem,false);
+                if(ogg.length<4 || ogg[0]!='O' || ogg[1]!='g' || ogg[2]!='g' || ogg[3]!='S')
+                    throw new IOException("Hasil dekode bukan Ogg yang valid");
+                runOnUiThread(()->{
+                    if(bank!=sourceBank){message("Bank suara berubah. Ulangi ekspor.");return;}
+                    originalExportOgg=ogg;
+                    Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                    i.addCategory(Intent.CATEGORY_OPENABLE);
+                    i.setType("audio/ogg");
+                    i.putExtra(Intent.EXTRA_TITLE,entry.id+"_original.ogg");
+                    startActivityForResult(i,SAVE_ORIGINAL_OGG);
+                });
+            }catch(Exception ex){message("Gagal mengekspor OGG asli: "+ex.getMessage());}
         });
     }
     private void home(){
@@ -329,6 +353,7 @@ public class MLBBLauncherActivity extends Activity {
             soundActions.addView(previewButton,side);
             soundActions.addView(editButton,new LinearLayout.LayoutParams(0,dp(54),2));
             root.addView(soundActions);
+            button("Ekspor OGG asli · ID "+e.id,()->exportOriginalOgg(e));
             previewButton.setOnClickListener(v->{
                 if(previewPlayer!=null){stopPreview();message("Pratinjau dihentikan");previewButton.setText("Putar");}
                 else {previewWem(e);previewButton.setText("Hentikan");}
@@ -490,6 +515,16 @@ public class MLBBLauncherActivity extends Activity {
                 try(OutputStream out=getContentResolver().openOutputStream(uri)){
                     out.write(bytes);message("WEM uji coba berhasil diekspor; berkas MLBB tidak berubah.");
                 }catch(Exception ex){message("Ekspor gagal: "+ex.getMessage());}
+            });
+        }else if(request==SAVE_ORIGINAL_OGG && originalExportOgg!=null){
+            final byte[] bytes=originalExportOgg;
+            originalExportOgg=null;
+            worker.execute(()->{
+                try(OutputStream out=getContentResolver().openOutputStream(uri)){
+                    if(out==null)throw new IOException("Penyimpanan tujuan tidak tersedia");
+                    out.write(bytes);
+                    message("OGG original berhasil disimpan. BNK asli tidak berubah, siap diedit di FL Studio.");
+                }catch(Exception ex){message("Ekspor OGG asli gagal: "+ex.getMessage());}
             });
         }else if(request==SAVE_NATIVE_OGG && nativeDecodedOgg!=null){
             final byte[] bytes=nativeDecodedOgg;
